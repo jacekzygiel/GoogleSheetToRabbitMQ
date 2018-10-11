@@ -1,5 +1,8 @@
 # Google Sheets to RabbitMQ
 
+## Description
+Example project with implementation of reading data from Google Sheet and sending to RabbitMQ in json format.
+
 ## Prerequisite
 
 1. Install dependencies
