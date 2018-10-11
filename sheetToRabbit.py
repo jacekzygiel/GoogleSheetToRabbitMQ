@@ -3,13 +3,23 @@ from oauth2client import file, client, tools
 from googleapiclient.discovery import build
 from httplib2 import Http
 import pika
-from pprint import pprint
+from configparser import ConfigParser
 
-def check_credentials(creds_):
-    if not creds_ or creds_.invalid:
+
+def get_config():
+    config = ConfigParser()
+    config.read("config.ini")
+    return config
+
+def check_credentials():
+    SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+    store = file.Storage('token.json')
+    creds = store.get()
+
+    if not creds or creds.invalid:
         flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
-        creds_ = tools.run_flow(flow, store)
-    return build('sheets', 'v4', http=creds_.authorize(Http()))
+        creds = tools.run_flow(flow, store)
+    return build('sheets', 'v4', http=creds.authorize(Http()))
 
 
 def send_request(service_, spreadsheet_id_, range_):
@@ -21,32 +31,28 @@ def parse_values_to_json(response_):
     return json.dumps(response_['values'])
 
 
-def send_values_to_rabbit(connection_parameters, queue_, exchange_, routing_key_, json_values_):
-    connection = pika.BlockingConnection(pika.ConnectionParameters(connection_parameters))
+def send_values_to_rabbit(host_, queue_, exchange_, routing_key_, json_values_):
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=host_))
     channel = connection.channel()
     channel.queue_declare(queue=queue_)
     channel.basic_publish(exchange=exchange_,
                           routing_key=routing_key_,
                           body=json_values_)
+    print("Sent to rabbit: " + json_values)
     connection.close()
 
 
 if __name__ == '__main__':
-    SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-    store = file.Storage('token.json')
-    creds = store.get()
+    config = get_config()
 
-    service = check_credentials(creds)
+    SPREADSHEET_ID = config['Spreadsheet']['id']
+    SPREADSHEET_RANGE = config['Spreadsheet']['range']
+    RABBIT_HOST = config['RabbitMQ']['host']
+    QUEUE = config['RabbitMQ']['queue']
+    EXCHANGE = config['RabbitMQ']['exchange']
+    ROUNTING_KEY = config['RabbitMQ']['routingkey']
 
-    spreadsheet_id = '1v9YzGazewSYSNuNMp37b6MQf2QP64INIfrZ1lrrB3Nw'
-    range = 'Arkusz1!A2:E'
-
-    response = send_request(service, spreadsheet_id, range)
+    service = check_credentials()
+    response = send_request(service, SPREADSHEET_ID, SPREADSHEET_RANGE)
     json_values = parse_values_to_json(response)
-    pprint(json_values)
-
-    CONNECTION_PARAMETERS = ""
-    QUEUE = ""
-    EXCHANGE = ""
-    ROUNTING_KEY = ""
-    send_values_to_rabbit(CONNECTION_PARAMETERS, QUEUE, EXCHANGE, ROUNTING_KEY, json_values)
+    send_values_to_rabbit(RABBIT_HOST, QUEUE, EXCHANGE, ROUNTING_KEY, json_values)
