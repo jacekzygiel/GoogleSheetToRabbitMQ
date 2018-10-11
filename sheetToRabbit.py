@@ -11,6 +11,7 @@ def get_config():
     config.read("config.ini")
     return config
 
+
 def check_credentials():
     SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly'
     store = file.Storage('token.json')
