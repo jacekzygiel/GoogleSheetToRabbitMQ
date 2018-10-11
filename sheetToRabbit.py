@@ -20,7 +20,7 @@ class SheetToRabbit:
 
     def get_config(self):
         config = ConfigParser()
-        self.config.read("config.ini")
+        config.read("config.ini")
         self.SPREADSHEET_ID = config['Spreadsheet']['id']
         self.SPREADSHEET_RANGE = config['Spreadsheet']['range']
         self.RABBIT_HOST = config['RabbitMQ']['host']
@@ -43,13 +43,13 @@ class SheetToRabbit:
         self.response = request.execute()
 
     def parse_values_to_json(self):
-        return json.dumps(self.response['values'])
+        self.json_values = json.dumps(self.response['values'])
 
     def send_values_to_rabbit(self):
         connection = pika.BlockingConnection(pika.ConnectionParameters(self.RABBIT_HOST))
         channel = connection.channel()
         channel.queue_declare(queue=self.RABBIT_QUEUE)
-        channel.basic_publish(exchange=self.RABBIT_EXCHANGE_,
+        channel.basic_publish(exchange=self.RABBIT_EXCHANGE,
                               routing_key=self.RABBIT_ROUNTING_KEY,
                               body=self.json_values)
         print("Sent to rabbit: " + self.json_values)
