@@ -16,7 +16,7 @@ class SheetToRabbit:
         self.RABBIT_HOST = None
         self.RABBIT_QUEUE = None
         self.RABBIT_EXCHANGE = None
-        self.RABBIT_ROUNTING_KEY = None
+        self.RABBIT_ROUTING_KEY = None
 
     def get_config(self):
         config = ConfigParser()
@@ -26,7 +26,7 @@ class SheetToRabbit:
         self.RABBIT_HOST = config['RabbitMQ']['host']
         self.RABBIT_QUEUE = config['RabbitMQ']['queue']
         self.RABBIT_EXCHANGE = config['RabbitMQ']['exchange']
-        self.RABBIT_ROUNTING_KEY = config['RabbitMQ']['routingkey']
+        self.RABBIT_ROUTING_KEY = config['RabbitMQ']['routingkey']
 
     def check_credentials(self):
         scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
@@ -50,7 +50,7 @@ class SheetToRabbit:
         channel = connection.channel()
         channel.queue_declare(queue=self.RABBIT_QUEUE)
         channel.basic_publish(exchange=self.RABBIT_EXCHANGE,
-                              routing_key=self.RABBIT_ROUNTING_KEY,
+                              routing_key=self.RABBIT_ROUTING_KEY,
                               body=self.json_values)
         print("Sent to rabbit: " + self.json_values)
         connection.close()
