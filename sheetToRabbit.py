@@ -6,54 +6,60 @@ import pika
 from configparser import ConfigParser
 
 
-def get_config():
-    config = ConfigParser()
-    config.read("config.ini")
-    return config
+class SheetToRabbit:
+    def __init__(self):
+        self.service = None
+        self.response = None
+        self.json_values = None
+        self.SPREADSHEET_ID = None
+        self.SPREADSHEET_RANGE = None
+        self.RABBIT_HOST = None
+        self.RABBIT_QUEUE = None
+        self.RABBIT_EXCHANGE = None
+        self.RABBIT_ROUNTING_KEY = None
 
+    def get_config(self):
+        config = ConfigParser()
+        self.config.read("config.ini")
+        self.SPREADSHEET_ID = config['Spreadsheet']['id']
+        self.SPREADSHEET_RANGE = config['Spreadsheet']['range']
+        self.RABBIT_HOST = config['RabbitMQ']['host']
+        self.RABBIT_QUEUE = config['RabbitMQ']['queue']
+        self.RABBIT_EXCHANGE = config['RabbitMQ']['exchange']
+        self.RABBIT_ROUNTING_KEY = config['RabbitMQ']['routingkey']
 
-def check_credentials():
-    SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-    store = file.Storage('token.json')
-    creds = store.get()
+    def check_credentials(self):
+        scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+        store = file.Storage('token.json')
+        creds = store.get()
 
-    if not creds or creds.invalid:
-        flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
-        creds = tools.run_flow(flow, store)
-    return build('sheets', 'v4', http=creds.authorize(Http()))
+        if not creds or creds.invalid:
+            flow = client.flow_from_clientsecrets('credentials.json', scopes)
+            creds = tools.run_flow(flow, store)
+        self.service = build('sheets', 'v4', http=creds.authorize(Http()))
 
+    def send_request_to_google_sheet(self):
+        request = self.service.spreadsheets().values().get(spreadsheetId=self.SPREADSHEET_ID, range=self.SPREADSHEET_RANGE)
+        self.response = request.execute()
 
-def send_request(service_, spreadsheet_id_, range_):
-    request = service_.spreadsheets().values().get(spreadsheetId=spreadsheet_id_, range=range_)
-    return request.execute()
+    def parse_values_to_json(self):
+        return json.dumps(self.response['values'])
 
-
-def parse_values_to_json(response_):
-    return json.dumps(response_['values'])
-
-
-def send_values_to_rabbit(host_, queue_, exchange_, routing_key_, json_values_):
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=host_))
-    channel = connection.channel()
-    channel.queue_declare(queue=queue_)
-    channel.basic_publish(exchange=exchange_,
-                          routing_key=routing_key_,
-                          body=json_values_)
-    print("Sent to rabbit: " + json_values)
-    connection.close()
+    def send_values_to_rabbit(self):
+        connection = pika.BlockingConnection(pika.ConnectionParameters(self.RABBIT_HOST))
+        channel = connection.channel()
+        channel.queue_declare(queue=self.RABBIT_QUEUE)
+        channel.basic_publish(exchange=self.RABBIT_EXCHANGE_,
+                              routing_key=self.RABBIT_ROUNTING_KEY,
+                              body=self.json_values)
+        print("Sent to rabbit: " + self.json_values)
+        connection.close()
 
 
 if __name__ == '__main__':
-    config = get_config()
-
-    SPREADSHEET_ID = config['Spreadsheet']['id']
-    SPREADSHEET_RANGE = config['Spreadsheet']['range']
-    RABBIT_HOST = config['RabbitMQ']['host']
-    QUEUE = config['RabbitMQ']['queue']
-    EXCHANGE = config['RabbitMQ']['exchange']
-    ROUNTING_KEY = config['RabbitMQ']['routingkey']
-
-    service = check_credentials()
-    response = send_request(service, SPREADSHEET_ID, SPREADSHEET_RANGE)
-    json_values = parse_values_to_json(response)
-    send_values_to_rabbit(RABBIT_HOST, QUEUE, EXCHANGE, ROUNTING_KEY, json_values)
+    worker = SheetToRabbit()
+    worker.get_config()
+    worker.check_credentials()
+    worker.send_request_to_google_sheet()
+    worker.parse_values_to_json()
+    worker.send_values_to_rabbit()
