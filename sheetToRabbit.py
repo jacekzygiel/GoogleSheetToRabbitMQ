@@ -6,54 +6,115 @@ import pika
 from configparser import ConfigParser
 
 
-def get_config():
-    config = ConfigParser()
-    config.read("config.ini")
-    return config
+class RabbitSender:
+    def __init__(self, rabbit_host, rabbit_queue, rabbit_exchange, rabbit_routing_key):
+        self.connection = None
+        self.channel = None
+        self.queue = None
+
+        self.rabbit_host = rabbit_host
+        self.rabbit_queue = rabbit_queue
+        self.rabbit_exchange = rabbit_exchange
+        self.rabbit_routing_key = rabbit_routing_key
+
+    def create_connection(self):
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(self.rabbit_host))
+
+    def close_connection(self):
+        self.connection.close()
+
+    def create_channel(self):
+        self.channel = self.connection.channel()
+
+    def declare_queue(self):
+        self.queue = self.channel.queue_declare(queue=self.rabbit_queue)
+
+    def simple_prepare_to_publish(self):
+        self.create_connection()
+        self.create_channel()
+        self.declare_queue()
+
+    def publish_json(self, json_):
+        self.channel.basic_publish(exchange=self.rabbit_exchange,
+                                   routing_key=self.rabbit_routing_key,
+                                   body=json_)
+        print("Sent to rabbit: " + json)
 
 
-def check_credentials():
-    SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-    store = file.Storage('token.json')
-    creds = store.get()
+class GoogleSheet:
+    def __init__(self, spreadsheet_id, spreadsheet_range):
+        self.service = None
+        self.response = None
+        self.message = None
+        self.json = None
+        self.spreadsheet_id = spreadsheet_id
+        self.spreadsheet_range = spreadsheet_range
 
-    if not creds or creds.invalid:
-        flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
-        creds = tools.run_flow(flow, store)
-    return build('sheets', 'v4', http=creds.authorize(Http()))
+    def pass_credentials(self):
+        scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+        store = file.Storage('token.json')
+        creds = store.get()
+
+        if not creds or creds.invalid:
+            flow = client.flow_from_clientsecrets('credentials.json', scopes)
+            creds = tools.run_flow(flow, store)
+        self.service = build('sheets', 'v4', http=creds.authorize(Http()))
+
+    def read_data_from_sheet(self):
+        request = self.service.spreadsheets().values().get(spreadsheetId=self.spreadsheet_id,
+                                                           range=self.spreadsheet_range)
+        self.response = request.execute()
+
+    def get_field_value(self, field_name):
+        self.message = self.response[field_name]
+
+    def map_to_key_values(self):
+        message_temp = {}
+        for x in self.message:
+            message_temp[x[0]] = x[1]
+        self.message = message_temp
+
+    def map_to_json(self):
+        self.json = json.dumps(self.message)
+
+    def get_json(self):
+        return self.json
 
 
-def send_request(service_, spreadsheet_id_, range_):
-    request = service_.spreadsheets().values().get(spreadsheetId=spreadsheet_id_, range=range_)
-    return request.execute()
+class Config:
+    def __init__(self, path):
+        self.path = path
+        self.config = None
 
+    def parse_config(self):
+        self.config = ConfigParser()
+        self.config.read(self.path)
 
-def parse_values_to_json(response_):
-    return json.dumps(response_['values'])
-
-
-def send_values_to_rabbit(host_, queue_, exchange_, routing_key_, json_values_):
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=host_))
-    channel = connection.channel()
-    channel.queue_declare(queue=queue_)
-    channel.basic_publish(exchange=exchange_,
-                          routing_key=routing_key_,
-                          body=json_values_)
-    print("Sent to rabbit: " + json_values)
-    connection.close()
+    def get_value(self, section, field):
+        return self.config[section][field]
 
 
 if __name__ == '__main__':
-    config = get_config()
+    config = Config("config.ini")
+    config.parse_config()
 
-    SPREADSHEET_ID = config['Spreadsheet']['id']
-    SPREADSHEET_RANGE = config['Spreadsheet']['range']
-    RABBIT_HOST = config['RabbitMQ']['host']
-    QUEUE = config['RabbitMQ']['queue']
-    EXCHANGE = config['RabbitMQ']['exchange']
-    ROUNTING_KEY = config['RabbitMQ']['routingkey']
+    SPREADSHEET_ID = config.get_value("Spreadsheet", "id")
+    SPREADSHEET_RANGE = config.get_value("Spreadsheet", "range")
 
-    service = check_credentials()
-    response = send_request(service, SPREADSHEET_ID, SPREADSHEET_RANGE)
-    json_values = parse_values_to_json(response)
-    send_values_to_rabbit(RABBIT_HOST, QUEUE, EXCHANGE, ROUNTING_KEY, json_values)
+    RABBIT_HOST = config.get_value("RabbitMQ", "host")
+    RABBIT_QUEUE = config.get_value("RabbitMQ", "queue")
+    RABBIT_EXCHANGE = config.get_value("RabbitMQ", "exchange")
+    RABBIT_ROUTING_KEY = config.get_value("RabbitMQ", "routingkey")
+
+    sheet = GoogleSheet(SPREADSHEET_ID, SPREADSHEET_RANGE)
+    sheet.pass_credentials()
+    sheet.read_data_from_sheet()
+    sheet.get_field_value("values")
+    sheet.map_to_key_values()
+    sheet.map_to_json()
+    json = sheet.get_json()
+
+    rabbit = RabbitSender(RABBIT_HOST, RABBIT_QUEUE, RABBIT_EXCHANGE, RABBIT_ROUTING_KEY)
+    rabbit.simple_prepare_to_publish()
+    rabbit.publish_json(json)
+    rabbit.close_connection()
