@@ -2,6 +2,17 @@
 
 ## Description
 Example project with implementation of reading data from Google Sheet and sending to RabbitMQ in json format.
+Maps data from Google Sheet cells to key - value json.
+e.g.
+
+| Id | Key  | Value |
+|----|------|-------|
+| 1  | Mark | 150   |
+| 2  | Tom  | 23    |
+| 3  | Ben  | 214   |
+
+Will be passed to RabbitMQ as a json:
+`{'Mark', '150', 'Tom', '23', 'Ben', '214'}`
 
 ## Prerequisite
 

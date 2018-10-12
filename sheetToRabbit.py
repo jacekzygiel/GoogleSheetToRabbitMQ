@@ -45,6 +45,7 @@ class GoogleSheet:
     def __init__(self, spreadsheet_id, spreadsheet_range):
         self.service = None
         self.response = None
+        self.message = None
         self.json = None
         self.spreadsheet_id = spreadsheet_id
         self.spreadsheet_range = spreadsheet_range
@@ -64,8 +65,17 @@ class GoogleSheet:
                                                            range=self.spreadsheet_range)
         self.response = request.execute()
 
-    def parse_field_to_json(self, field_name):
-        self.json = json.dumps(self.response[field_name])
+    def get_field_value(self, field_name):
+        self.message = self.response[field_name]
+
+    def map_to_key_values(self):
+        message_temp = {}
+        for x in self.message:
+            message_temp[x[0]] = x[1]
+        self.message = message_temp
+
+    def map_to_json(self):
+        self.json = json.dumps(self.message)
 
     def get_json(self):
         return self.json
@@ -94,15 +104,17 @@ if __name__ == '__main__':
     RABBIT_HOST = config.get_value("RabbitMQ", "host")
     RABBIT_QUEUE = config.get_value("RabbitMQ", "queue")
     RABBIT_EXCHANGE = config.get_value("RabbitMQ", "exchange")
-    RABBIT_ROUTINGKEY = config.get_value("RabbitMQ", "routingkey")
+    RABBIT_ROUTING_KEY = config.get_value("RabbitMQ", "routingkey")
 
     sheet = GoogleSheet(SPREADSHEET_ID, SPREADSHEET_RANGE)
     sheet.pass_credentials()
     sheet.read_data_from_sheet()
-    sheet.parse_field_to_json("values")
+    sheet.get_field_value("values")
+    sheet.map_to_key_values()
+    sheet.map_to_json()
     json = sheet.get_json()
 
-    rabbit = RabbitSender(RABBIT_HOST, RABBIT_QUEUE, RABBIT_EXCHANGE, RABBIT_ROUTINGKEY)
+    rabbit = RabbitSender(RABBIT_HOST, RABBIT_QUEUE, RABBIT_EXCHANGE, RABBIT_ROUTING_KEY)
     rabbit.simple_prepare_to_publish()
     rabbit.publish_json(json)
     rabbit.close_connection()
